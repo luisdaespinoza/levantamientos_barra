@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Levantamiento por Código de Barras (Local)</title>
+    <!-- Carga de Tailwind CSS para un diseño moderno y responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Carga de QuaggaJS para la lectura de códigos de barras -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <style>
+        /* Estilos personalizados para el contenedor del escáner */
+        #interactive {
+            position: relative;
+            width: 100%;
+            height: 300px; /* Altura fija para el visor de la cámara */
+            overflow: hidden;
+            background-color: #000;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        /* Ajuste de QuaggaJS para que ocupe todo el espacio */
+        #interactive video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover; /* Asegura que la cámara se vea bien */
+        }
+        /* Resalta el área de detección (opcional) */
+        .drawingBuffer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        /* Estilos base para el cuerpo */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* Estilos para el overlay del modal */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.75);
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8 min-h-screen">
+
+    <div class="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-xl shadow-2xl">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">
+            Levantamiento por Código de Barras
+        </h1>
+
+        <!-- SECCIÓN DE ESCANER -->
+        <div class="mb-8">
+            <h2 class="text-xl font-semibold text-indigo-600 mb-3 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10m8-8v8m-8-8v8m12-4v4m-8-4v4m12-4v4" />
+                </svg>
+                Visor de Escaneo
+            </h2>
+            <!-- Este es el contenedor donde QuaggaJS inserta el stream de video -->
+            <div id="interactive" class="viewport"></div>
+        </div>
+
+        <!-- CONTADOR Y ACCIONES -->
+        <div class="flex flex-col sm:flex-row justify-between items-center bg-gray-50 p-4 rounded-lg mb-6 shadow-inner">
+            <p class="text-lg font-medium text-gray-700 mb-4 sm:mb-0">
+                Total de Códigos Capturados: 
+                <span id="count-display" class="text-3xl font-extrabold text-indigo-600 ml-2">0</span>
+            </p>
+            <div class="flex space-x-3 w-full sm:w-auto">
+                <button id="copy-button" class="flex-1 sm:flex-none px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition duration-150 transform hover:scale-[1.02]">
+                    💾 Copiar Levantamiento
+                </button>
+                <button id="clear-button" class="flex-1 sm:flex-none px-6 py-3 bg-red-500 text-white font-bold rounded-lg shadow-md hover:bg-red-600 transition duration-150 transform hover:scale-[1.02]">
+                    🗑️ Limpiar Datos
+                </button>
+            </div>
+        </div>
+
+        <!-- TABLA DE RESULTADOS -->
+        <h2 class="text-xl font-semibold text-gray-800 mb-3 mt-8">
+            Lista de Códigos
+        </h2>
+        <div class="overflow-x-auto rounded-lg shadow-lg">
+            <table class="min-w-full divide-y divide-gray-200 bg-white">
+                <thead class="bg-gray-200">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                            Código de Barra
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="data-body" class="divide-y divide-gray-100">
+                    <!-- Los códigos escaneados se insertarán aquí -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Custom Toast/Message Box (para mostrar mensajes de éxito/error) -->
+    <div id="message-box" class="fixed top-4 right-4 p-4 rounded-lg shadow-xl z-50 opacity-0 pointer-events-none transition-opacity duration-300">
+        <p id="message-content" class="font-semibold"></p>
+    </div>
+
+    <!-- Modal de Confirmación de Limpieza (reemplazo de alert/confirm) -->
+    <div id="confirm-clear-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-overlay">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm mx-auto">
+            <h3 class="text-lg font-bold text-gray-900 mb-4">Confirmar Limpieza</h3>
+            <p class="text-gray-600 mb-6">¿Estás seguro de que deseas eliminar TODOS los códigos de barras capturados de forma local?</p>
+            <div class="flex justify-end space-x-3">
+                <button id="confirm-no" class="px-4 py-2 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition">
+                    Cancelar
+                </button>
+                <button id="confirm-yes" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition">
+                    Sí, Limpiar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuración global y clave de almacenamiento local
+        let barcodes = [];
+        const STORAGE_KEY = 'scannedBarcodes';
+
+        // --- FUNCIONES DE ALMACENAMIENTO Y RENDERIZADO ---
+
+        /**
+         * Carga los códigos de barra desde localStorage e inicializa la tabla.
+         */
+        const loadBarcodes = () => {
+            try {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                barcodes = stored ? JSON.parse(stored) : [];
+                renderTable();
+            } catch (error) {
+                console.error("Error al cargar datos de localStorage:", error);
+            }
+        };
+
+        /**
+         * Guarda el array de códigos actual en localStorage.
+         */
+        const saveBarcodes = () => {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(barcodes));
+        };
+
+        /**
+         * Renderiza la tabla con los datos actuales (los más nuevos primero).
+         */
+        const renderTable = () => {
+            const tableBody = document.getElementById('data-body');
+            tableBody.innerHTML = ''; // Limpiar filas existentes
+            
+            // Recorrer en orden inverso para que los últimos escaneos aparezcan arriba
+            barcodes.slice().reverse().forEach((barcode) => {
+                const row = tableBody.insertRow();
+                row.className = 'border-t border-gray-200 hover:bg-indigo-50/50 transition-colors';
+
+                const codeCell = row.insertCell(0);
+                codeCell.textContent = barcode;
+                codeCell.className = 'py-3 px-6 text-sm font-mono text-gray-800';
+            });
+
+            // Actualizar contador
+            document.getElementById('count-display').textContent = barcodes.length;
+        };
+        
+        // --- LÓGICA DE ESCANEO (QUAGGAJS) ---
+
+        /**
+         * Función que se ejecuta cuando Quagga detecta un código.
+         */
+        const onDetected = (result) => {
+            const code = result.codeResult.code;
+
+            // 1. Vibrar para confirmar el escaneo (si es un móvil)
+            if (window.navigator.vibrate) {
+                window.navigator.vibrate(100);
+            }
+
+            // 2. Añadir el código y guardar
+            barcodes.push(code);
+            saveBarcodes();
+            renderTable();
+
+            // 3. Detener Quagga temporalmente para evitar re-escaneos inmediatos
+            Quagga.stop();
+            
+            showMessageBox(`✅ Código detectado: ${code}`, 'success');
+
+            // 4. Reiniciar el escaneo después de un breve retraso (1.5s)
+            setTimeout(() => {
+                startScanner();
+            }, 1500);
+        };
+
+        /**
+         * Inicializa QuaggaJS y el flujo de la cámara.
+         */
+        const startScanner = () => {
+            const videoContainer = document.getElementById('interactive');
+            
+            if (typeof Quagga === 'undefined') {
+                showMessageBox("Error: La librería de escaneo no está cargada.", 'error');
+                return;
+            }
+
+            Quagga.init({
+                inputStream : {
+                    name : "Live",
+                    type : "LiveStream",
+                    target: videoContainer,
+                    constraints: {
+                        facingMode: "environment" // Usa la cámara trasera si está disponible
+                    }
+                },
+                decoder : {
+                    readers : ["code_128_reader", "ean_reader", "ean_8_reader", "code_39_reader"]
+                }
+            }, function(err) {
+                if (err) {
+                    console.error("Error Quagga:", err);
+                    showMessageBox("⚠️ Error al iniciar la cámara. Asegúrate de dar permisos.", 'error');
+                    // Muestra un placeholder o mensaje alternativo
+                    videoContainer.innerHTML = '<div class="flex items-center justify-center h-full text-white text-center p-4">Error de cámara. Revisa permisos o intenta de nuevo.</div>';
+                    return;
+                }
+                Quagga.start();
+                showMessageBox("▶️ Escáner listo. Enfoca un código de barras.", 'info');
+            });
+
+            // Asocia el evento de detección
+            Quagga.onDetected(onDetected);
+        };
+
+        // --- LÓGICA DE ACCIONES (COPIAR Y LIMPIAR) ---
+
+        /**
+         * Copia todos los códigos de barra al portapapeles, separados por nueva línea.
+         */
+        const copyBarcodes = () => {
+            if (barcodes.length === 0) {
+                showMessageBox("🚫 No hay códigos para copiar.", 'warning');
+                return;
+            }
+
+            // Crear una cadena separada por saltos de línea
+            const dataToCopy = barcodes.join('\n');
+
+            // Crear un textarea temporal para la funcionalidad de copia (más compatible en iframes)
+            const tempTextarea = document.createElement('textarea');
+            tempTextarea.value = dataToCopy;
+            tempTextarea.style.position = 'fixed';
+            tempTextarea.style.opacity = '0';
+            document.body.appendChild(tempTextarea);
+            tempTextarea.focus();
+            tempTextarea.select();
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showMessageBox(`📋 ¡${barcodes.length} códigos copiados al portapapeles!`, 'success');
+                } else {
+                    throw new Error('Fallback copy failed.');
+                }
+            } catch (err) {
+                console.error('Error al copiar:', err);
+                showMessageBox("❌ No se pudo copiar automáticamente.", 'error');
+            } finally {
+                document.body.removeChild(tempTextarea);
+            }
+        };
+
+        /**
+         * Muestra el modal de confirmación antes de limpiar los datos.
+         */
+        const clearBarcodes = () => {
+            const confirmClear = document.getElementById('confirm-clear-modal');
+            confirmClear.classList.remove('hidden');
+        };
+
+        /**
+         * Ejecuta la acción de limpiar si se confirma.
+         */
+        const confirmClearAction = (isConfirmed) => {
+            const confirmClear = document.getElementById('confirm-clear-modal');
+            confirmClear.classList.add('hidden');
+
+            if (isConfirmed) {
+                barcodes = [];
+                saveBarcodes();
+                renderTable();
+                showMessageBox("🗑️ Levantamiento limpiado. ¡Listo para empezar de nuevo!", 'info');
+            }
+        };
+
+
+        // --- MENSAJERO (Custom Alert) ---
+
+        /**
+         * Muestra un mensaje temporal en la esquina superior derecha.
+         */
+        const showMessageBox = (message, type = 'info') => {
+            const box = document.getElementById('message-box');
+            const msgContent = document.getElementById('message-content');
+            
+            // Remover clases anteriores
+            box.className = 'fixed top-4 right-4 p-4 rounded-lg shadow-xl z-50 transition-opacity duration-300';
+            
+            msgContent.textContent = message;
+
+            let bgColor = 'bg-blue-500';
+            if (type === 'success') bgColor = 'bg-green-600';
+            else if (type === 'warning') bgColor = 'bg-yellow-600';
+            else if (type === 'error') bgColor = 'bg-red-600';
+
+            box.classList.add(bgColor, 'text-white');
+            box.classList.remove('opacity-0', 'pointer-events-none');
+
+            // Ocultar después de 4 segundos
+            setTimeout(() => {
+                box.classList.add('opacity-0', 'pointer-events-none');
+            }, 4000);
+        };
+
+        // --- INICIALIZACIÓN DE LA APP ---
+        window.onload = () => {
+            // 1. Cargar datos guardados y dibujar la tabla
+            loadBarcodes();
+
+            // 2. Configurar listeners para los botones de acción
+            document.getElementById('copy-button').addEventListener('click', copyBarcodes);
+            document.getElementById('clear-button').addEventListener('click', clearBarcodes);
+
+            // 3. Configurar botones del modal de confirmación
+            document.getElementById('confirm-yes').addEventListener('click', () => confirmClearAction(true));
+            document.getElementById('confirm-no').addEventListener('click', () => confirmClearAction(false));
+
+            // 4. Iniciar el escáner al cargar la página
+            startScanner();
+        };
+
+    </script>
+</body>
+</html>
