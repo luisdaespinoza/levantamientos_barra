@@ -223,16 +223,17 @@
             
             showMessageBox(`✅ Código detectado: ${code}`, 'success');
 
-            // 4. Reiniciar el escaneo después de un breve retraso (1.5s)
+            // 4. Reiniciar el escaneo después de un breve retraso (1.5s).
+            // NOTA: Solo llamamos a Quagga.start(), NO a initializeScanner() de nuevo.
             setTimeout(() => {
-                startScanner();
+                Quagga.start(); 
             }, 1500);
         };
 
         /**
-         * Inicializa QuaggaJS y el flujo de la cámara.
+         * Inicializa QuaggaJS y el flujo de la cámara. (Solo se llama una vez al inicio)
          */
-        const startScanner = () => {
+        const initializeScanner = () => {
             const videoContainer = document.getElementById('interactive');
             
             if (typeof Quagga === 'undefined') {
@@ -260,11 +261,12 @@
                     videoContainer.innerHTML = '<div class="flex items-center justify-center h-full text-white text-center p-4">Error de cámara. Revisa permisos o intenta de nuevo.</div>';
                     return;
                 }
+                // Iniciar el stream de la cámara (primera vez)
                 Quagga.start();
                 showMessageBox("▶️ Escáner listo. Enfoca un código de barras.", 'info');
             });
 
-            // Asocia el evento de detección
+            // Asocia el evento de detección UNA SOLA VEZ
             Quagga.onDetected(onDetected);
         };
 
@@ -385,10 +387,10 @@
             document.getElementById('confirm-yes').addEventListener('click', () => confirmClearAction(true));
             document.getElementById('confirm-no').addEventListener('click', () => confirmClearAction(false));
 
-            // 4. Iniciar el escáner al cargar la página
-            startScanner();
+            // 4. Inicializar el escáner (llamada única)
+            initializeScanner();
         };
 
     </script>
-</body>
+    </body>
 </html>
