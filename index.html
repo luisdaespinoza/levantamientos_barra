@@ -218,18 +218,15 @@
             saveBarcodes();
             renderTable();
 
-            // 3. Detener Quagga temporalmente para evitar re-escaneos inmediatos
+            // 3. Detener Quagga temporalmente
             Quagga.stop();
             
-            showMessageBox(`✅ Código detectado: ${code}`, 'success');
+            showMessageBox(`✅ Código detectado: ${code}. Recargando en 1 segundo...`, 'success');
 
-            // 4. Reiniciar el escaneo después de un breve retraso (1.5s).
-            // NOTA: Solo llamamos a Quagga.start(), NO a initializeScanner() de nuevo.
+            // 4. Recargar la página después de 1 segundo (1000ms).
             setTimeout(() => {
-                Quagga.start(); 
-                // Mensaje para confirmar que se intentó reanudar
-                showMessageBox("▶️ Escáner reanudado. Enfoca otro código.", 'info'); 
-            }, 1500);
+                window.location.reload(); 
+            }, 1000);
         };
 
         /**
