@@ -227,6 +227,8 @@
             // NOTA: Solo llamamos a Quagga.start(), NO a initializeScanner() de nuevo.
             setTimeout(() => {
                 Quagga.start(); 
+                // Mensaje para confirmar que se intentó reanudar
+                showMessageBox("▶️ Escáner reanudado. Enfoca otro código.", 'info'); 
             }, 1500);
         };
 
@@ -392,5 +394,5 @@
         };
 
     </script>
-    </body>
+</body>
 </html>
