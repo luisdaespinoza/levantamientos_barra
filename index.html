@@ -206,6 +206,9 @@
          * Función que se ejecuta cuando Quagga detecta un código.
          */
         const onDetected = (result) => {
+            // Previene que se disparen múltiples eventos si se escanea el mismo código
+            Quagga.offDetected(onDetected); 
+
             const code = result.codeResult.code;
 
             // 1. Vibrar para confirmar el escaneo (si es un móvil)
@@ -218,15 +221,18 @@
             saveBarcodes();
             renderTable();
 
-            // 3. Detener Quagga temporalmente
+            // 3. Detener Quagga temporalmente para evitar re-escaneos inmediatos
             Quagga.stop();
             
-            showMessageBox(`✅ Código detectado: ${code}. Recargando en 1 segundo...`, 'success');
+            showMessageBox(`✅ Código detectado: ${code}`, 'success');
 
-            // 4. Recargar la página después de 1 segundo (1000ms).
+            // 4. Reiniciar el escaneo después de un breve retraso (1.5s).
             setTimeout(() => {
-                window.location.reload(); 
-            }, 1000);
+                Quagga.start(); 
+                // Volver a asociar el listener de detección
+                Quagga.onDetected(onDetected); 
+                showMessageBox("▶️ Escáner reanudado. Enfoca otro código.", 'info'); 
+            }, 1500);
         };
 
         /**
@@ -250,6 +256,7 @@
                     }
                 },
                 decoder : {
+                    // Mantenemos el lector de Código 39 (code_39_reader) habilitado
                     readers : ["code_128_reader", "ean_reader", "ean_8_reader", "code_39_reader"]
                 }
             }, function(err) {
@@ -265,7 +272,7 @@
                 showMessageBox("▶️ Escáner listo. Enfoca un código de barras.", 'info');
             });
 
-            // Asocia el evento de detección UNA SOLA VEZ
+            // Asocia el evento de detección UNA SOLA VEZ (la lógica onDetected lo manejará en reinicios)
             Quagga.onDetected(onDetected);
         };
 
