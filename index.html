@@ -94,6 +94,10 @@
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
                             Código de Barra
                         </th>
+                        <!-- NUEVA COLUMNA PARA ACCIONES -->
+                        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">
+                            Acción
+                        </th>
                     </tr>
                 </thead>
                 <tbody id="data-body" class="divide-y divide-gray-100">
@@ -159,13 +163,37 @@
             tableBody.innerHTML = ''; // Limpiar filas existentes
             
             // Recorrer en orden inverso para que los últimos escaneos aparezcan arriba
-            barcodes.slice().reverse().forEach((barcode) => {
+            // NOTA: Usamos el índice original del array 'barcodes' para la función de borrado
+            barcodes.slice().reverse().forEach((barcode, reverseIndex) => {
+                // Calcular el índice real en el array 'barcodes' para el botón de eliminación
+                const realIndex = barcodes.length - 1 - reverseIndex;
+
                 const row = tableBody.insertRow();
                 row.className = 'border-t border-gray-200 hover:bg-indigo-50/50 transition-colors';
 
                 const codeCell = row.insertCell(0);
                 codeCell.textContent = barcode;
                 codeCell.className = 'py-3 px-6 text-sm font-mono text-gray-800';
+                
+                // Celda de Acción
+                const actionCell = row.insertCell(1);
+                actionCell.className = 'py-2 px-6 text-right text-sm font-medium';
+
+                // Botón de Eliminación
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'p-1 text-red-500 hover:text-red-700 rounded-full transition duration-150';
+                deleteButton.setAttribute('title', `Eliminar código ${barcode}`);
+                // Usamos el índice real para saber qué elemento borrar
+                deleteButton.onclick = () => deleteBarcode(realIndex); 
+
+                // Ícono de papelera (SVG)
+                deleteButton.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                `;
+                
+                actionCell.appendChild(deleteButton);
             });
 
             // Actualizar contador
@@ -241,6 +269,20 @@
         };
 
         // --- LÓGICA DE ACCIONES (COPIAR Y LIMPIAR) ---
+        
+        /**
+         * Elimina un código de barras específico por su índice.
+         * @param {number} index - El índice del código de barras a eliminar.
+         */
+        window.deleteBarcode = (index) => {
+            if (index > -1 && index < barcodes.length) {
+                const deletedCode = barcodes.splice(index, 1)[0]; // Elimina 1 elemento en el índice
+                saveBarcodes();
+                renderTable();
+                showMessageBox(`🗑️ Código eliminado: ${deletedCode}`, 'warning');
+            }
+        };
+
 
         /**
          * Copia todos los códigos de barra al portapapeles, separados por nueva línea.
