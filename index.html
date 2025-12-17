@@ -7,8 +7,10 @@
     <!-- Carga de Tailwind CSS para un diseño moderno y responsivo -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <!-- Carga de QuaggaJS para la lectura de códigos de barras -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    
+    <!-- Carga de ZXing-JS para la lectura de códigos de barras (¡NUEVO!) -->
+    <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+
     <style>
         /* Estilos personalizados para el contenedor del escáner */
         #interactive {
@@ -20,7 +22,7 @@
             border-radius: 0.5rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
         }
-        /* Ajuste de QuaggaJS para que ocupe todo el espacio */
+        /* Ajuste de ZXing-JS para que el elemento <video> ocupe todo el espacio */
         #interactive video {
             position: absolute;
             top: 0;
@@ -28,14 +30,6 @@
             width: 100% !important;
             height: 100% !important;
             object-fit: cover; /* Asegura que la cámara se vea bien */
-        }
-        /* Resalta el área de detección (opcional) */
-        .drawingBuffer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
         }
         /* Estilos base para el cuerpo */
         body {
@@ -61,9 +55,9 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10m8-8v8m-8-8v8m12-4v4m-8-4v4m12-4v4" />
                 </svg>
-                Visor de Escaneo
+                Visor de Escaneo (ZXing-JS)
             </h2>
-            <!-- Este es el contenedor donde QuaggaJS inserta el stream de video -->
+            <!-- Este es el contenedor donde ZXing-JS inserta el stream de video -->
             <div id="interactive" class="viewport"></div>
         </div>
 
@@ -132,6 +126,7 @@
         // Configuración global y clave de almacenamiento local
         let barcodes = [];
         const STORAGE_KEY = 'scannedBarcodes';
+        let codeReader = null; // Instancia de ZXing Reader
 
         // --- FUNCIONES DE ALMACENAMIENTO Y RENDERIZADO ---
 
@@ -200,17 +195,12 @@
             document.getElementById('count-display').textContent = barcodes.length;
         };
         
-        // --- LÓGICA DE ESCANEO (QUAGGAJS) ---
+        // --- LÓGICA DE ESCANEO (ZXING-JS) ---
 
         /**
-         * Función que se ejecuta cuando Quagga detecta un código.
+         * Función que se ejecuta cuando ZXing detecta un código.
          */
-        const onDetected = (result) => {
-            // Desactivamos el listener de detección para evitar escaneos repetidos
-            Quagga.offDetected(onDetected); 
-
-            const code = result.codeResult.code;
-
+        const onDetected = (code) => {
             // 1. Vibrar para confirmar el escaneo (si es un móvil)
             if (window.navigator.vibrate) {
                 window.navigator.vibrate(100);
@@ -221,8 +211,10 @@
             saveBarcodes();
             renderTable();
 
-            // 3. Detener Quagga
-            Quagga.stop();
+            // 3. Detener ZXing Reader (IMPORTANTE: Esto detiene el stream de video)
+            if (codeReader) {
+                codeReader.reset();
+            }
             
             showMessageBox(`✅ Código detectado: ${code}. Recargando página en 1 segundo...`, 'success');
 
@@ -233,45 +225,60 @@
         };
 
         /**
-         * Inicializa QuaggaJS y el flujo de la cámara. (Solo se llama una vez al inicio)
+         * Inicializa ZXing-JS y el flujo de la cámara.
          */
         const initializeScanner = () => {
             const videoContainer = document.getElementById('interactive');
             
-            if (typeof Quagga === 'undefined') {
-                showMessageBox("Error: La librería de escaneo no está cargada.", 'error');
+            if (typeof ZXing === 'undefined' || typeof ZXing.BrowserMultiFormatReader === 'undefined') {
+                showMessageBox("Error: La librería de escaneo ZXing-JS no está cargada.", 'error');
+                videoContainer.innerHTML = '<div class="flex items-center justify-center h-full text-white text-center p-4 bg-gray-900">Error: Librería de escaneo no disponible.</div>';
                 return;
             }
 
-            Quagga.init({
-                inputStream : {
-                    name : "Live",
-                    type : "LiveStream",
-                    target: videoContainer,
-                    constraints: {
-                        facingMode: "environment" // Usa la cámara trasera si está disponible
-                    }
-                },
-                decoder : {
-                    // Mantenemos el lector de Código 39 (code_39_reader) habilitado
-                    readers : ["code_128_reader", "ean_reader", "ean_8_reader", "code_39_reader"]
-                }
-            }, function(err) {
-                if (err) {
-                    console.error("Error Quagga:", err);
-                    showMessageBox("⚠️ Error al iniciar la cámara. Asegúrate de dar permisos.", 'error');
-                    // Muestra un placeholder o mensaje alternativo
-                    videoContainer.innerHTML = '<div class="flex items-center justify-center h-full text-white text-center p-4">Error de cámara. Revisa permisos o intenta de nuevo.</div>';
-                    return;
-                }
-                // Iniciar el stream de la cámara (primera vez)
-                Quagga.start();
-                showMessageBox("▶️ Escáner listo. Enfoca un código de barras.", 'info');
+            // Crear el lector
+            codeReader = new ZXing.BrowserMultiFormatReader(null, { 
+                delayBetweenScanAttempts: 500, // Pequeño retraso entre intentos de detección
+                // Opciones para centrar la detección si es necesario
+                // constraints: { video: { facingMode: 'environment' } } // Se manejará al buscar el dispositivo
             });
 
-            // Asocia el evento de detección UNA SOLA VEZ 
-            // NOTA: La lógica onDetected se asegura de desconectar y recargar la página.
-            Quagga.onDetected(onDetected);
+            showMessageBox("Cargando cámaras...", 'info');
+            
+            // 1. Listar dispositivos de video disponibles
+            codeReader.getVideoInputDevices()
+                .then((videoInputDevices) => {
+                    if (videoInputDevices.length === 0) {
+                        showMessageBox("⚠️ No se encontraron cámaras.", 'error');
+                        videoContainer.innerHTML = '<div class="flex items-center justify-center h-full text-white text-center p-4 bg-gray-900">Error: No se encontraron dispositivos de video.</div>';
+                        return;
+                    }
+
+                    // Seleccionar la cámara trasera ('environment') o la primera disponible
+                    const environmentDevice = videoInputDevices.find(device => 
+                        device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('environment')
+                    );
+                    
+                    const deviceId = environmentDevice ? environmentDevice.deviceId : videoInputDevices[0].deviceId;
+                    
+                    // 2. Iniciar el escaneo desde el dispositivo de video
+                    // La función de callback se llama cuando un código es detectado exitosamente
+                    codeReader.decodeFromVideoDevice(deviceId, 'interactive', (result, err) => {
+                        if (result) {
+                            // Si detecta un código, llamamos a la lógica principal y pasamos el texto
+                            onDetected(result.text); 
+                        }
+                        // Nota: El manejo de errores dentro del loop de escaneo se deja por defecto.
+                    });
+                    
+                    showMessageBox("▶️ Escáner ZXing listo. Enfoca un código de barras.", 'info');
+
+                })
+                .catch(err => {
+                    console.error("Error al acceder a la cámara:", err);
+                    showMessageBox("⚠️ Error al iniciar la cámara. Asegúrate de dar permisos.", 'error');
+                    videoContainer.innerHTML = '<div class="flex items-center justify-center h-full text-white text-center p-4 bg-gray-900">Error de cámara. Revisa permisos o intenta de nuevo.</div>';
+                });
         };
 
         // --- LÓGICA DE ACCIONES (COPIAR Y LIMPIAR) ---
