@@ -55,10 +55,11 @@
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10m8-8v8m-8-8v8m12-4v4m-8-4v4m12-4v4" />
                 </svg>
-                Visor de Escaneo (ZXing-JS)
+                Visor de Escaneo (ZXing-JS Mejorado)
             </h2>
             <!-- Contenedor del escáner. Se añade un elemento <video> explícito para ZXing -->
             <div id="interactive" class="viewport">
+                <!-- playsinline es esencial para móviles -->
                 <video id="videoElement" playsinline></video>
             </div>
         </div>
@@ -239,8 +240,24 @@
                 return;
             }
 
-            // Crear el lector con configuraciones por defecto
-            codeReader = new ZXing.BrowserMultiFormatReader();
+            // --- CONFIGURACIÓN DE PISTAS (HINTS) PARA MAYOR PRECISIÓN ---
+            const hints = new Map();
+            // 1. Intentar decodificar con más esfuerzo (útil para códigos difíciles)
+            hints.set(ZXing.DecodeHintType.TRY_HARDER, true); 
+            
+            // 2. Limitar formatos para mejorar la velocidad y reducir errores (Códigos 1D comunes)
+            hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+                ZXing.BarcodeFormat.CODE_128,
+                ZXing.BarcodeFormat.EAN_13,
+                ZXing.BarcodeFormat.EAN_8,
+                ZXing.BarcodeFormat.UPC_A,
+                ZXing.BarcodeFormat.UPC_E,
+                ZXing.BarcodeFormat.ITF, // Interleaved 2 of 5
+                ZXing.BarcodeFormat.CODE_39,
+            ]);
+
+            // Crear el lector con las pistas mejoradas
+            codeReader = new ZXing.BrowserMultiFormatReader(hints);
 
             showMessageBox("Cargando cámaras...", 'info');
             
@@ -259,34 +276,50 @@
                     );
                     
                     const deviceId = environmentDevice ? environmentDevice.deviceId : videoInputDevices[0].deviceId;
+
+                    // --- CONFIGURACIÓN DE RESTRICCIONES (CONSTRAINTS) PARA ALTA RESOLUCIÓN ---
+                    const constraints = {
+                        video: {
+                            deviceId: deviceId,
+                            // Preferir alta resolución para mejor detalle del código
+                            width: { ideal: 1280 }, 
+                            height: { ideal: 720 },
+                            // Forzar cámara trasera si es posible, ideal para escanear
+                            facingMode: environmentDevice ? 'environment' : 'user' 
+                        }
+                    };
                     
                     // 2. Iniciar el escaneo desde el dispositivo de video usando el elemento <video> explícito
-                    // Se usa 'videoElement' que es el ID del tag <video> dentro de #interactive
                     codeReader.decodeFromVideoDevice(deviceId, 'videoElement', (result, err) => {
                         if (result) {
                             // Código detectado
                             onDetected(result.text); 
-                            return; // Importante para evitar re-escaneo
+                            return; 
                         }
 
                         // Ignorar NotFoundException, que ocurre cuando no hay códigos a la vista
                         if (err && !(err instanceof ZXing.NotFoundException)) {
                             console.error("Error durante el escaneo:", err);
                         }
-                    });
+                    }, constraints); // Pasar las restricciones al método
                     
                     showMessageBox("▶️ Escáner ZXing listo. Enfoca un código de barras.", 'info');
 
                 })
                 .catch(err => {
-                    // Este catch captura errores de 'getUserMedia' (permisos)
                     console.error("Error al acceder a la cámara:", err);
                     let message = "⚠️ Error al iniciar la cámara. Asegúrate de dar permisos.";
-                    if (err.name === "NotAllowedError") {
-                        message = "🚨 Permiso de cámara denegado. Habilítalo en tu navegador.";
+                    if (err.name === "NotAllowedError" || err.name === "SecurityError") {
+                        message = "🚨 Permiso de cámara denegado o acceso bloqueado. Habilítalo en tu navegador.";
+                    } else if (err.name === "OverconstrainedError") {
+                        message = "⚠️ No se pudo usar la configuración de video solicitada (resolución/cámara).";
                     }
                     showMessageBox(message, 'error');
-                    videoContainer.innerHTML = `<div class="flex items-center justify-center h-full text-white text-center p-4 bg-gray-900">${message}</div>`;
+                    // Mostrar un mensaje de error más claro en el visor
+                    const videoElement = document.getElementById('videoElement');
+                    const interactiveDiv = document.getElementById('interactive');
+                    if(videoElement) videoElement.remove();
+                    interactiveDiv.innerHTML = `<div class="flex items-center justify-center h-full text-white text-center p-4 bg-red-800/80">${message}</div>`;
                 });
         };
 
