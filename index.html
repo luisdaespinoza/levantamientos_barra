@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     
-    <!-- Carga de ZXing-JS para la lectura de códigos de barras (¡NUEVO!) -->
+    <!-- Carga de ZXing-JS para la lectura de códigos de barras -->
     <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
 
     <style>
@@ -57,8 +57,10 @@
                 </svg>
                 Visor de Escaneo (ZXing-JS)
             </h2>
-            <!-- Este es el contenedor donde ZXing-JS inserta el stream de video -->
-            <div id="interactive" class="viewport"></div>
+            <!-- Contenedor del escáner. Se añade un elemento <video> explícito para ZXing -->
+            <div id="interactive" class="viewport">
+                <video id="videoElement" playsinline></video>
+            </div>
         </div>
 
         <!-- CONTADOR Y ACCIONES -->
@@ -213,12 +215,13 @@
 
             // 3. Detener ZXing Reader (IMPORTANTE: Esto detiene el stream de video)
             if (codeReader) {
+                // reset() detiene el stream de video y libera recursos de la cámara
                 codeReader.reset();
             }
             
             showMessageBox(`✅ Código detectado: ${code}. Recargando página en 1 segundo...`, 'success');
 
-            // 4. Recargar la página después de 1 segundo (1000ms) como solicitaste.
+            // 4. Recargar la página después de 1 segundo (1000ms).
             setTimeout(() => {
                 window.location.reload(); 
             }, 1000);
@@ -236,12 +239,8 @@
                 return;
             }
 
-            // Crear el lector
-            codeReader = new ZXing.BrowserMultiFormatReader(null, { 
-                delayBetweenScanAttempts: 500, // Pequeño retraso entre intentos de detección
-                // Opciones para centrar la detección si es necesario
-                // constraints: { video: { facingMode: 'environment' } } // Se manejará al buscar el dispositivo
-            });
+            // Crear el lector con configuraciones por defecto
+            codeReader = new ZXing.BrowserMultiFormatReader();
 
             showMessageBox("Cargando cámaras...", 'info');
             
@@ -254,30 +253,40 @@
                         return;
                     }
 
-                    // Seleccionar la cámara trasera ('environment') o la primera disponible
+                    // Priorizar la cámara trasera ('environment') si existe
                     const environmentDevice = videoInputDevices.find(device => 
                         device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('environment')
                     );
                     
                     const deviceId = environmentDevice ? environmentDevice.deviceId : videoInputDevices[0].deviceId;
                     
-                    // 2. Iniciar el escaneo desde el dispositivo de video
-                    // La función de callback se llama cuando un código es detectado exitosamente
-                    codeReader.decodeFromVideoDevice(deviceId, 'interactive', (result, err) => {
+                    // 2. Iniciar el escaneo desde el dispositivo de video usando el elemento <video> explícito
+                    // Se usa 'videoElement' que es el ID del tag <video> dentro de #interactive
+                    codeReader.decodeFromVideoDevice(deviceId, 'videoElement', (result, err) => {
                         if (result) {
-                            // Si detecta un código, llamamos a la lógica principal y pasamos el texto
+                            // Código detectado
                             onDetected(result.text); 
+                            return; // Importante para evitar re-escaneo
                         }
-                        // Nota: El manejo de errores dentro del loop de escaneo se deja por defecto.
+
+                        // Ignorar NotFoundException, que ocurre cuando no hay códigos a la vista
+                        if (err && !(err instanceof ZXing.NotFoundException)) {
+                            console.error("Error durante el escaneo:", err);
+                        }
                     });
                     
                     showMessageBox("▶️ Escáner ZXing listo. Enfoca un código de barras.", 'info');
 
                 })
                 .catch(err => {
+                    // Este catch captura errores de 'getUserMedia' (permisos)
                     console.error("Error al acceder a la cámara:", err);
-                    showMessageBox("⚠️ Error al iniciar la cámara. Asegúrate de dar permisos.", 'error');
-                    videoContainer.innerHTML = '<div class="flex items-center justify-center h-full text-white text-center p-4 bg-gray-900">Error de cámara. Revisa permisos o intenta de nuevo.</div>';
+                    let message = "⚠️ Error al iniciar la cámara. Asegúrate de dar permisos.";
+                    if (err.name === "NotAllowedError") {
+                        message = "🚨 Permiso de cámara denegado. Habilítalo en tu navegador.";
+                    }
+                    showMessageBox(message, 'error');
+                    videoContainer.innerHTML = `<div class="flex items-center justify-center h-full text-white text-center p-4 bg-gray-900">${message}</div>`;
                 });
         };
 
