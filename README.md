@@ -41,3 +41,10 @@ El sistema está configurado para detectar automáticamente:
 * **UPC-A / UPC-E** (Retail)
 * **CODE_39** (Uso industrial)
 * **ITF** (Interleaved 2 of 5)
+
+---
+
+**Autor:** [Luis David Espinoza @perreohipertenso]
+
+
+**USO LIBRE**
